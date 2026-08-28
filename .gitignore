@@ -1,0 +1,8 @@
+.gradle/
+build/
+node_modules/
+dashboard/dist/
+dashboard/tsconfig.tsbuildinfo
+.env
+.idea/
+*.iml

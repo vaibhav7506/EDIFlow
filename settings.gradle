@@ -1,0 +1,3 @@
+pluginManagement { repositories { mavenCentral(); gradlePluginPortal() } }
+rootProject.name = 'ediflow'
+include 'packages:canonical-events', 'ingestion-service', 'order-service'
