@@ -1,0 +1,2 @@
+package com.vaibhav.ediflow.order.rules;
+public record RuleResult(Outcome outcome,String reason){public enum Outcome{PASS,HOLD,REJECT,MATCH_EXCEPTION} public static RuleResult pass(){return new RuleResult(Outcome.PASS,null);} public static RuleResult hold(String r){return new RuleResult(Outcome.HOLD,r);} public static RuleResult reject(String r){return new RuleResult(Outcome.REJECT,r);} public static RuleResult matchException(String r){return new RuleResult(Outcome.MATCH_EXCEPTION,r);}}

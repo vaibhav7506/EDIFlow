@@ -1,0 +1,3 @@
+package com.vaibhav.ediflow.order.rules;
+import org.springframework.stereotype.Component; import java.math.BigDecimal;
+@Component public class LineValueRule implements BusinessRule { public RuleResult evaluate(RuleContext c){for(var line:c.event().payload().lines()){if(line.quantity().compareTo(BigDecimal.ZERO)<=0)return RuleResult.reject("Line "+line.lineNumber()+" quantity must be greater than zero.");if(line.unitPrice().compareTo(BigDecimal.ZERO)<0)return RuleResult.reject("Line "+line.lineNumber()+" unit price cannot be negative.");}return RuleResult.pass();} public int order(){return 20;} }

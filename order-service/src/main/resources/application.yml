@@ -1,0 +1,28 @@
+server:
+  port: ${SERVER_PORT:8082}
+spring:
+  application:
+    name: order-service
+  datasource:
+    url: ${JDBC_DATABASE_URL:jdbc:postgresql://localhost:5432/ediflow}
+    username: ${POSTGRES_USER:ediflow}
+    password: ${POSTGRES_PASSWORD:ediflow}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ediflow-order-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.vaibhav.ediflow.events
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+ediflow:
+  active-partner-codes: ${ACTIVE_PARTNER_CODES:SENDERID}
+management.endpoints.web.exposure.include: health,info,prometheus

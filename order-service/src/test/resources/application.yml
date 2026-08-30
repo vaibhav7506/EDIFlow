@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:ediflow-order;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa.hibernate.ddl-auto: validate
+  kafka:
+    listener:
+      auto-startup: false
+    consumer:
+      group-id: ediflow-order-service-test
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.vaibhav.ediflow.events
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer

@@ -1,0 +1,3 @@
+package com.vaibhav.ediflow.order.repository;
+import com.vaibhav.ediflow.order.domain.ProcessingEvent; import org.springframework.data.domain.*; import org.springframework.data.jpa.repository.*; import org.springframework.data.repository.query.Param; import java.util.*;
+public interface ProcessingEventRepository extends JpaRepository<ProcessingEvent,UUID>{List<ProcessingEvent> findByEntityTypeAndEntityIdOrderByOccurredAt(String entityType,UUID entityId); @Query("select e from ProcessingEvent e where :query = '' or lower(e.entityType) like lower(concat('%', :query, '%')) or lower(e.toState) like lower(concat('%', :query, '%')) or lower(e.reason) like lower(concat('%', :query, '%'))") Page<ProcessingEvent> search(@Param("query")String query,Pageable pageable);}

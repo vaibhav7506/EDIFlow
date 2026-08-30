@@ -1,0 +1,3 @@
+package com.vaibhav.ediflow.order.consumer;
+import com.vaibhav.ediflow.events.CanonicalEdiEvent; import com.vaibhav.ediflow.order.service.DocumentProcessor; import org.springframework.kafka.annotation.KafkaListener; import org.springframework.stereotype.Component;
+@Component public class DocumentConsumer {private final DocumentProcessor processor;public DocumentConsumer(DocumentProcessor p){processor=p;}@KafkaListener(topics="ediflow.po.parsed.v1",groupId="ediflow-order-service") public void purchaseOrder(CanonicalEdiEvent e){processor.process(e,"ediflow.po.parsed.v1");}@KafkaListener(topics="ediflow.invoice.parsed.v1",groupId="ediflow-order-service") public void invoice(CanonicalEdiEvent e){processor.process(e,"ediflow.invoice.parsed.v1");}}

@@ -1,0 +1,3 @@
+package com.vaibhav.ediflow.order.api;
+import org.springframework.http.*;import org.springframework.web.bind.annotation.*;import java.time.Instant;
+@RestControllerAdvice public class ApiExceptionHandler {@ExceptionHandler(NotFound.class)ResponseEntity<ErrorBody> notFound(NotFound e){return ResponseEntity.status(404).body(new ErrorBody(Instant.now(),404,e.getMessage()));}@ExceptionHandler(IllegalArgumentException.class)ResponseEntity<ErrorBody> bad(IllegalArgumentException e){return ResponseEntity.badRequest().body(new ErrorBody(Instant.now(),400,e.getMessage()));}record ErrorBody(Instant timestamp,int status,String error){}}
