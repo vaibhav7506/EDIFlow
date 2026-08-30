@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ediflow-config
+  namespace: ediflow
+data:
+  POSTGRES_DB: ediflow
+  POSTGRES_USER: ediflow
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  JDBC_DATABASE_URL: jdbc:postgresql://postgres:5432/ediflow
+  REDIS_HOST: redis
+  AUTH_ISSUER: https://ediflow.example.com:30443
+  AUTH_JWK_SET_URI: http://authorization-server:9000/oauth2/jwks
+  AUTH_SERVER_URI: http://authorization-server:9000
+  INGESTION_SERVICE_URI: http://ingestion-service:8081
+  ORDER_SERVICE_URI: http://order-service:8082
+  B2B_CLIENT_ID: partner-client
+  B2B_PARTNER_CODE: SENDERID
+  READER_CLIENT_ID: reader-client
+  ADMIN_CLIENT_ID: admin-client
+  ACTIVE_PARTNER_CODES: SENDERID

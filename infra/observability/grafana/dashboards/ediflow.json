@@ -1,0 +1,21 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "Document ingestion rate", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}, "targets": [{"expr": "sum by (documentType) (rate(ediflow_documents_ingested_total[5m]))", "legendFormat": "{{documentType}}"}]},
+    {"id": 2, "type": "timeseries", "title": "Parse error rate", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}, "targets": [{"expr": "rate(ediflow_parse_errors_total[5m])", "legendFormat": "errors/sec"}]},
+    {"id": 3, "type": "gauge", "title": "Kafka consumer lag", "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}, "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 25}, {"color": "red", "value": 100}]}, "min": 0}}, "targets": [{"expr": "ediflow_kafka_consumer_lag"}]},
+    {"id": 4, "type": "timeseries", "title": "Processing latency p95", "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8}, "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(ediflow_processing_latency_seconds_bucket[5m])))", "legendFormat": "p95"}]},
+    {"id": 5, "type": "timeseries", "title": "Dead-letter queue depth", "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8}, "targets": [{"expr": "ediflow_dead_letter_queue_depth", "legendFormat": "open DLQ"}]}
+  ],
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "tags": ["ediflow", "phase-5"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timezone": "browser",
+  "title": "EDIFlow Operations",
+  "uid": "ediflow-operations",
+  "version": 1
+}

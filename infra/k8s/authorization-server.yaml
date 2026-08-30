@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: authorization-server
+  namespace: ediflow
+spec:
+  selector:
+    app: authorization-server
+  ports:
+    - name: http
+      port: 9000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authorization-server
+  namespace: ediflow
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: authorization-server
+  template:
+    metadata:
+      labels:
+        app: authorization-server
+        app.kubernetes.io/part-of: ediflow
+    spec:
+      imagePullSecrets:
+        - name: ghcr-credentials
+      containers:
+        - name: authorization-server
+          image: ghcr.io/vaibhav7506/ediflow-authorization-server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9000
+          env:
+            - { name: SERVER_PORT, value: "9000" }
+            - name: AUTH_ISSUER
+              valueFrom: { configMapKeyRef: { name: ediflow-config, key: AUTH_ISSUER } }
+            - name: B2B_CLIENT_ID
+              valueFrom: { configMapKeyRef: { name: ediflow-config, key: B2B_CLIENT_ID } }
+            - name: B2B_PARTNER_CODE
+              valueFrom: { configMapKeyRef: { name: ediflow-config, key: B2B_PARTNER_CODE } }
+            - name: READER_CLIENT_ID
+              valueFrom: { configMapKeyRef: { name: ediflow-config, key: READER_CLIENT_ID } }
+            - name: ADMIN_CLIENT_ID
+              valueFrom: { configMapKeyRef: { name: ediflow-config, key: ADMIN_CLIENT_ID } }
+            - name: B2B_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: ediflow-app-secrets, key: B2B_CLIENT_SECRET } }
+            - name: READER_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: ediflow-app-secrets, key: READER_CLIENT_SECRET } }
+            - name: ADMIN_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: ediflow-app-secrets, key: ADMIN_CLIENT_SECRET } }
+          startupProbe:
+            httpGet: { path: /actuator/health, port: http }
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet: { path: /actuator/health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /actuator/health, port: http }
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { cpu: 500m, memory: 512Mi }

@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: ediflow
+spec:
+  type: NodePort
+  selector:
+    app: gateway
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+      nodePort: 30443
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: ediflow
+spec:
+  replicas: 1
+  strategy:
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+        app.kubernetes.io/part-of: ediflow
+    spec:
+      imagePullSecrets:
+        - name: ghcr-credentials
+      securityContext:
+        fsGroup: 2000
+      containers:
+        - name: gateway
+          image: ghcr.io/vaibhav7506/ediflow-gateway:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: https
+              containerPort: 8443
+          env:
+            - { name: SERVER_PORT, value: "8443" }
+            - { name: TLS_ENABLED, value: "true" }
+            - { name: TLS_KEYSTORE, value: "file:/certs/gateway.p12" }
+            - { name: TLS_TRUSTSTORE, value: "file:/certs/truststore.p12" }
+            - name: TLS_STORE_PASSWORD
+              valueFrom: { secretKeyRef: { name: ediflow-app-secrets, key: TLS_STORE_PASSWORD } }
+            - name: AUTH_ISSUER
+              valueFrom: { configMapKeyRef: { name: ediflow-config, key: AUTH_ISSUER } }
+            - name: AUTH_JWK_SET_URI
+              valueFrom: { configMapKeyRef: { name: ediflow-config, key: AUTH_JWK_SET_URI } }
+            - name: AUTH_SERVER_URI
+              valueFrom: { configMapKeyRef: { name: ediflow-config, key: AUTH_SERVER_URI } }
+            - name: INGESTION_SERVICE_URI
+              valueFrom: { configMapKeyRef: { name: ediflow-config, key: INGESTION_SERVICE_URI } }
+            - name: ORDER_SERVICE_URI
+              valueFrom: { configMapKeyRef: { name: ediflow-config, key: ORDER_SERVICE_URI } }
+            - name: REDIS_HOST
+              valueFrom: { configMapKeyRef: { name: ediflow-config, key: REDIS_HOST } }
+          startupProbe:
+            tcpSocket: { port: https }
+            failureThreshold: 36
+            periodSeconds: 5
+          readinessProbe:
+            tcpSocket: { port: https }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: https }
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 750m, memory: 768Mi }
+          volumeMounts:
+            - name: tls
+              mountPath: /certs
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: ediflow-gateway-tls
+            defaultMode: 0440
