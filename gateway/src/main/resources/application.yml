@@ -1,0 +1,25 @@
+server:
+  port: ${SERVER_PORT:8443}
+  ssl:
+    enabled: ${TLS_ENABLED:true}
+    key-store: ${TLS_KEYSTORE:file:/certs/gateway.p12}
+    key-store-password: ${TLS_STORE_PASSWORD:changeit}
+    key-store-type: PKCS12
+    trust-store: ${TLS_TRUSTSTORE:file:/certs/truststore.p12}
+    trust-store-password: ${TLS_STORE_PASSWORD:changeit}
+    trust-store-type: PKCS12
+    client-auth: need
+spring:
+  application:
+    name: gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER:https://localhost:8443}
+          jwk-set-uri: ${AUTH_JWK_SET_URI:http://localhost:9000/oauth2/jwks}
+management.endpoints.web.exposure.include: health,info
