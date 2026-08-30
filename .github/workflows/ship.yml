@@ -1,0 +1,263 @@
+name: Test, publish, and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ediflow-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    name: Test and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Run unit and Docker-backed integration tests
+        run: ./gradlew --no-daemon test :integration-tests:integrationTest :gateway-integration-tests:integrationTest :authorization-server:bootJar :gateway:bootJar :ingestion-service:bootJar :order-service:bootJar
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Build dashboard
+        working-directory: dashboard
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Chromium and run dashboard E2E tests
+        working-directory: dashboard
+        run: |
+          npm run playwright:install
+          npm run test:e2e
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Render Kubernetes manifests
+        run: kubectl kustomize infra/k8s >/dev/null
+
+  publish:
+    name: Publish ${{ matrix.name }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: authorization-server
+            dockerfile: Dockerfile
+            target: authorization-server
+            context: .
+          - name: gateway
+            dockerfile: Dockerfile
+            target: gateway
+            context: .
+          - name: ingestion-service
+            dockerfile: Dockerfile
+            target: ingestion-service
+            context: .
+          - name: order-service
+            dockerfile: Dockerfile
+            target: order-service
+            context: .
+          - name: dashboard
+            dockerfile: dashboard/Dockerfile
+            target: dashboard
+            context: dashboard
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Normalize image owner
+        id: owner
+        shell: bash
+        run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish multi-architecture image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.value }}/ediflow-${{ matrix.name }}:${{ github.sha }}
+            ghcr.io/${{ steps.owner.outputs.value }}/ediflow-${{ matrix.name }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    name: Deploy to k3s
+    needs: publish
+    runs-on: [self-hosted, linux, ARM64, ediflow]
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Prepare kubeconfig and certificates
+        shell: bash
+        env:
+          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG_B64 }}
+          GATEWAY_P12_B64: ${{ secrets.GATEWAY_P12_B64 }}
+          TRUSTSTORE_P12_B64: ${{ secrets.TRUSTSTORE_P12_B64 }}
+          DASHBOARD_CLIENT_CERT_B64: ${{ secrets.DASHBOARD_CLIENT_CERT_B64 }}
+          DASHBOARD_CLIENT_KEY_B64: ${{ secrets.DASHBOARD_CLIENT_KEY_B64 }}
+          CA_CERT_B64: ${{ secrets.CA_CERT_B64 }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/ediflow"
+          printf '%s' "$KUBE_CONFIG_B64" | base64 --decode > "$RUNNER_TEMP/ediflow/kubeconfig"
+          printf '%s' "$GATEWAY_P12_B64" | base64 --decode > "$RUNNER_TEMP/ediflow/gateway.p12"
+          printf '%s' "$TRUSTSTORE_P12_B64" | base64 --decode > "$RUNNER_TEMP/ediflow/truststore.p12"
+          printf '%s' "$DASHBOARD_CLIENT_CERT_B64" | base64 --decode > "$RUNNER_TEMP/ediflow/dashboard-client.crt.pem"
+          printf '%s' "$DASHBOARD_CLIENT_KEY_B64" | base64 --decode > "$RUNNER_TEMP/ediflow/dashboard-client.key.pem"
+          printf '%s' "$CA_CERT_B64" | base64 --decode > "$RUNNER_TEMP/ediflow/ca.crt"
+          chmod 600 "$RUNNER_TEMP/ediflow"/*
+          echo "KUBECONFIG=$RUNNER_TEMP/ediflow/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Validate deployment inputs
+        shell: bash
+        env:
+          PUBLIC_GATEWAY_URL: ${{ vars.PUBLIC_GATEWAY_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$PUBLIC_GATEWAY_URL"
+          kubectl version --client
+          kubectl cluster-info
+
+      - name: Create namespace and secrets
+        shell: bash
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          B2B_CLIENT_SECRET: ${{ secrets.B2B_CLIENT_SECRET }}
+          READER_CLIENT_SECRET: ${{ secrets.READER_CLIENT_SECRET }}
+          ADMIN_CLIENT_SECRET: ${{ secrets.ADMIN_CLIENT_SECRET }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          TLS_STORE_PASSWORD: ${{ secrets.TLS_STORE_PASSWORD }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+        run: |
+          set -euo pipefail
+          kubectl apply -f infra/k8s/namespace.yaml
+          kubectl -n ediflow create secret generic ediflow-app-secrets \
+            --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+            --from-literal=B2B_CLIENT_SECRET="$B2B_CLIENT_SECRET" \
+            --from-literal=READER_CLIENT_SECRET="$READER_CLIENT_SECRET" \
+            --from-literal=ADMIN_CLIENT_SECRET="$ADMIN_CLIENT_SECRET" \
+            --from-literal=GRAFANA_ADMIN_PASSWORD="$GRAFANA_ADMIN_PASSWORD" \
+            --from-literal=TLS_STORE_PASSWORD="$TLS_STORE_PASSWORD" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n ediflow create secret generic ediflow-gateway-tls \
+            --from-file=gateway.p12="$RUNNER_TEMP/ediflow/gateway.p12" \
+            --from-file=truststore.p12="$RUNNER_TEMP/ediflow/truststore.p12" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n ediflow create secret generic ediflow-dashboard-mtls \
+            --from-file=dashboard-client.crt.pem="$RUNNER_TEMP/ediflow/dashboard-client.crt.pem" \
+            --from-file=dashboard-client.key.pem="$RUNNER_TEMP/ediflow/dashboard-client.key.pem" \
+            --from-file=ca.crt="$RUNNER_TEMP/ediflow/ca.crt" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n ediflow create secret docker-registry ghcr-credentials \
+            --docker-server=ghcr.io \
+            --docker-username="$GHCR_USERNAME" \
+            --docker-password="$GHCR_PULL_TOKEN" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply manifests and immutable image tags
+        shell: bash
+        env:
+          PUBLIC_GATEWAY_URL: ${{ vars.PUBLIC_GATEWAY_URL }}
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          sed -i "s|https://ediflow.example.com:30443|$PUBLIC_GATEWAY_URL|g" infra/k8s/configmap.yaml
+          sed -i "s|ghcr.io/vaibhav7506|ghcr.io/$owner|g" infra/k8s/kustomization.yaml
+          kubectl apply -k infra/k8s
+          kubectl -n ediflow set image deployment/authorization-server authorization-server="ghcr.io/$owner/ediflow-authorization-server:$GITHUB_SHA"
+          kubectl -n ediflow set image deployment/gateway gateway="ghcr.io/$owner/ediflow-gateway:$GITHUB_SHA"
+          kubectl -n ediflow set image deployment/ingestion-service ingestion-service="ghcr.io/$owner/ediflow-ingestion-service:$GITHUB_SHA"
+          kubectl -n ediflow set image deployment/order-service order-service="ghcr.io/$owner/ediflow-order-service:$GITHUB_SHA"
+          kubectl -n ediflow set image deployment/dashboard dashboard="ghcr.io/$owner/ediflow-dashboard:$GITHUB_SHA"
+
+      - name: Wait for healthy rollout
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl -n ediflow rollout status statefulset/postgres --timeout=5m
+          kubectl -n ediflow rollout status statefulset/kafka --timeout=5m
+          kubectl -n ediflow rollout status deployment/redis --timeout=3m
+          kubectl -n ediflow rollout status deployment/authorization-server --timeout=5m
+          kubectl -n ediflow rollout status deployment/ingestion-service --timeout=5m
+          kubectl -n ediflow rollout status deployment/order-service --timeout=5m
+          kubectl -n ediflow rollout status deployment/gateway --timeout=5m
+          kubectl -n ediflow rollout status deployment/dashboard --timeout=3m
+          kubectl -n ediflow rollout status deployment/prometheus --timeout=3m
+          kubectl -n ediflow rollout status deployment/grafana --timeout=3m
+
+      - name: Remove temporary deployment material
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/ediflow"
+
+  verify:
+    name: Verify deployment externally
+    needs: deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Verify public mTLS health endpoint
+        shell: bash
+        env:
+          PUBLIC_GATEWAY_URL: ${{ vars.PUBLIC_GATEWAY_URL }}
+          TLS_STORE_PASSWORD: ${{ secrets.TLS_STORE_PASSWORD }}
+          PARTNER_CLIENT_P12_B64: ${{ secrets.PARTNER_CLIENT_P12_B64 }}
+          CA_CERT_B64: ${{ secrets.CA_CERT_B64 }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/ediflow-verify"
+          printf '%s' "$PARTNER_CLIENT_P12_B64" | base64 --decode > "$RUNNER_TEMP/ediflow-verify/partner-client.p12"
+          printf '%s' "$CA_CERT_B64" | base64 --decode > "$RUNNER_TEMP/ediflow-verify/ca.crt"
+          curl --fail --show-error --silent \
+            --cert-type P12 \
+            --cert "$RUNNER_TEMP/ediflow-verify/partner-client.p12:$TLS_STORE_PASSWORD" \
+            --cacert "$RUNNER_TEMP/ediflow-verify/ca.crt" \
+            "$PUBLIC_GATEWAY_URL/actuator/health" | grep -q '"status":"UP"'
+          rm -rf "$RUNNER_TEMP/ediflow-verify"
