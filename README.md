@@ -60,6 +60,10 @@ See [the k3s deployment runbook](docs/deployment.md) for VM bootstrap, DNS/certi
 
 See [the architecture decision log](docs/decisions.md) for the security, messaging, persistence, retry, and deployment trade-offs. See [the application workflow](docs/flow.md) for end-to-end diagrams, the reason each stage exists, and a current competitor comparison.
 
+## Hosted dashboard
+
+The production Vite assets are deployed at [dashboard-sigma-swart-17.vercel.app](https://dashboard-sigma-swart-17.vercel.app). This is the Vercel-hosted dashboard surface; the complete runtime still belongs on the documented k3s target because Kafka, PostgreSQL, Redis, long-running JVM consumers, persistent volumes, and the mTLS Gateway are not static frontend workloads. Remote login and API operations require a public Gateway plus a server-side proxy that can present the dashboard client certificate. Never embed that private key in the browser bundle.
+
 ## Verify OAuth2 and mTLS
 
 Get a partner token:
