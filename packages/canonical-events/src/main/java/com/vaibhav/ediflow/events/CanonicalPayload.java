@@ -10,7 +10,7 @@ public record CanonicalPayload(
     String invoiceNumber,
     LocalDate invoiceDate,
     String referencedPoNumber,
-    BigDecimal declaredTotal,
+    Integer declaredLineCount,
     BigDecimal totalAmount,
     List<CanonicalLine> lines
 ) { }
