@@ -1,4 +1,12 @@
 services:
+  cert-generator:
+    build: ./infra/certs
+    environment:
+      TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:-changeit}
+    volumes:
+      - ./.certs:/certs
+    restart: "no"
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -9,31 +17,180 @@ services:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
-      retries: 12
+      retries: 20
     volumes:
       - postgres-data:/var/lib/postgresql/data
-  app:
-    build: .
+
+  kafka:
+    image: apache/kafka:3.9.2
     environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  authorization-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: authorization-server
+    environment:
+      SERVER_PORT: 9000
+      AUTH_ISSUER: https://localhost:${GATEWAY_PORT:-8443}
+      B2B_CLIENT_ID: ${B2B_CLIENT_ID:-partner-client}
+      B2B_CLIENT_SECRET: ${B2B_CLIENT_SECRET:-change-me-partner}
+      B2B_PARTNER_CODE: ${B2B_PARTNER_CODE:-SENDERID}
+      READER_CLIENT_ID: ${READER_CLIENT_ID:-reader-client}
+      READER_CLIENT_SECRET: ${READER_CLIENT_SECRET:-change-me-reader}
+      ADMIN_CLIENT_ID: ${ADMIN_CLIENT_ID:-admin-client}
+      ADMIN_CLIENT_SECRET: ${ADMIN_CLIENT_SECRET:-change-me-admin}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  ingestion-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ingestion-service
+    environment:
+      SERVER_PORT: 8081
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  order-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: order-service
+    environment:
+      SERVER_PORT: 8082
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JDBC_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ediflow}
       POSTGRES_USER: ${POSTGRES_USER:-ediflow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ediflow}
-      JDBC_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ediflow}
-    ports:
-      - "${SERVER_PORT:-8080}:8080"
+      ACTIVE_PARTNER_CODES: ${ACTIVE_PARTNER_CODES:-SENDERID}
     depends_on:
+      kafka:
+        condition: service_healthy
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health | grep -q UP"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8082/actuator/health | grep -q UP"]
       interval: 10s
       timeout: 5s
-      retries: 12
+      retries: 20
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: gateway
+    environment:
+      SERVER_PORT: 8443
+      TLS_ENABLED: "true"
+      TLS_KEYSTORE: file:/certs/gateway.p12
+      TLS_TRUSTSTORE: file:/certs/truststore.p12
+      TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:-changeit}
+      AUTH_ISSUER: https://localhost:${GATEWAY_PORT:-8443}
+      AUTH_JWK_SET_URI: http://authorization-server:9000/oauth2/jwks
+      AUTH_SERVER_URI: http://authorization-server:9000
+      INGESTION_SERVICE_URI: http://ingestion-service:8081
+      ORDER_SERVICE_URI: http://order-service:8082
+      REDIS_HOST: redis
+    ports:
+      - "${GATEWAY_PORT:-8443}:8443"
+    volumes:
+      - ./.certs:/certs:ro
+    depends_on:
+      cert-generator:
+        condition: service_completed_successfully
+      authorization-server:
+        condition: service_healthy
+      ingestion-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --cert-type P12 --cert /certs/dashboard-client.p12:${TLS_STORE_PASSWORD:-changeit} --cacert /certs/ca.crt https://localhost:8443/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 8s
+      retries: 20
+
   dashboard:
     build: ./dashboard
     ports:
       - "${DASHBOARD_PORT:-5173}:80"
+    volumes:
+      - ./.certs:/certs:ro
     depends_on:
-      app:
+      gateway:
         condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      ingestion-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-ediflow-local}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 volumes:
   postgres-data:
+  prometheus-data:
+  grafana-data:

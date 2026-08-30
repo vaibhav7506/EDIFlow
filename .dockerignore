@@ -1,0 +1,12 @@
+.git
+.github
+.gradle
+.idea
+.env
+.certs
+.deployment-certs
+**/build
+**/node_modules
+dashboard/dist
+docs
+infra

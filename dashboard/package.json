@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "scripts": { "dev": "vite", "build": "tsc -b && vite build" },
+  "scripts": { "dev": "vite", "build": "tsc -b && vite build", "playwright:install": "playwright install --with-deps chromium", "test": "playwright test", "test:e2e": "playwright test" },
   "dependencies": { "@vitejs/plugin-react": "latest", "vite": "latest", "typescript": "~5.8.3", "react": "latest", "react-dom": "latest" },
-  "devDependencies": { "@types/react": "latest", "@types/react-dom": "latest" }
+  "devDependencies": { "@axe-core/playwright": "^4.10.2", "@playwright/test": "^1.55.0", "@types/node": "latest", "@types/react": "latest", "@types/react-dom": "latest" }
 }

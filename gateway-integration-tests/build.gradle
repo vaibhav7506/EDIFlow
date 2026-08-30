@@ -1,0 +1,49 @@
+plugins {
+    id 'java'
+    id 'io.spring.dependency-management'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+        mavenBom 'org.springframework.cloud:spring-cloud-dependencies:2025.0.3'
+    }
+}
+
+sourceSets {
+    integrationTest {
+        java.srcDir 'src/integrationTest/java'
+        resources.srcDir 'src/integrationTest/resources'
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+configurations {
+    integrationTestImplementation.extendsFrom testImplementation
+    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+dependencies {
+    integrationTestImplementation project(':gateway')
+    integrationTestImplementation 'org.springframework.boot:spring-boot-starter-test'
+    integrationTestImplementation 'org.springframework.boot:spring-boot-starter-webflux'
+    integrationTestImplementation 'org.springframework.boot:spring-boot-starter-security'
+    integrationTestImplementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    integrationTestImplementation 'org.springframework.cloud:spring-cloud-starter-gateway-server-webflux'
+    integrationTestImplementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
+    integrationTestImplementation 'org.springframework.security:spring-security-test'
+    integrationTestImplementation 'io.projectreactor:reactor-test'
+    integrationTestImplementation 'org.testcontainers:testcontainers:2.0.5'
+    integrationTestImplementation 'org.testcontainers:testcontainers-junit-jupiter:2.0.5'
+    integrationTestRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.register('integrationTest', Test) {
+    description = 'Runs the Redis-backed Gateway rate-limit integration test.'
+    group = 'verification'
+    testClassesDirs = sourceSets.integrationTest.output.classesDirs
+    classpath = sourceSets.integrationTest.runtimeClasspath
+    useJUnitPlatform()
+    systemProperty 'junit.jupiter.execution.timeout.default', '2m'
+}

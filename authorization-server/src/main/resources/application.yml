@@ -1,0 +1,19 @@
+server:
+  port: ${SERVER_PORT:9000}
+spring:
+  application:
+    name: authorization-server
+ediflow:
+  issuer: ${AUTH_ISSUER:https://localhost:8443}
+  clients:
+    partner:
+      id: ${B2B_CLIENT_ID:partner-client}
+      secret: ${B2B_CLIENT_SECRET:change-me-partner}
+      code: ${B2B_PARTNER_CODE:SENDERID}
+    reader:
+      id: ${READER_CLIENT_ID:reader-client}
+      secret: ${READER_CLIENT_SECRET:change-me-reader}
+    admin:
+      id: ${ADMIN_CLIENT_ID:admin-client}
+      secret: ${ADMIN_CLIENT_SECRET:change-me-admin}
+management.endpoints.web.exposure.include: health,info

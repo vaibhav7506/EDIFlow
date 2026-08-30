@@ -2,7 +2,12 @@
 build/
 node_modules/
 dashboard/dist/
+dashboard/test-results/
 dashboard/tsconfig.tsbuildinfo
 .env
+.certs/
+.deployment-certs/
+.vercel/
+.env.local
 .idea/
 *.iml
