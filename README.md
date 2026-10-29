@@ -62,6 +62,8 @@ See [the architecture decision log](docs/decisions.md) for the security, messagi
 
 ## Hosted dashboard
 
+For a project review, use the dashboard's guided retailer-to-supplier scenario and [the presenter script](docs/project-review.md). It demonstrates a $1,250 purchase order, a $1,300 invoice exception, a corrected invoice, and the audit evidence, with an explanation of what is simulated and how to prove the real backend separately.
+
 The public dashboard is deployed at [ediflowvaibhav7506.vercel.app](https://ediflowvaibhav7506.vercel.app), connected to this repository's `main` branch with `dashboard` as its Vercel root directory. It opens directly into an interactive recruiter demo without credentials. All records are fictional; sample processing, retries, approvals, and audit events run in browser memory and reset on refresh. No production API requests or document uploads occur in demo mode.
 
 For a dashboard connected to the real services, set `VITE_DASHBOARD_MODE=live` before starting or building Vite. This restores the OAuth2 login and authenticated API calls. The complete runtime belongs on the documented k3s target because Kafka, PostgreSQL, Redis, long-running JVM consumers, persistent volumes, and the mTLS Gateway are not static frontend workloads. Remote login and API operations require a public Gateway plus a server-side proxy that can present the dashboard client certificate. Never embed that private key in the browser bundle.

@@ -1,6 +1,7 @@
 import type { AuditEvent, DeadLetter, Detail, Invoice, Partner } from './main'
 
 type Demo = {
+  reviewStep: number
   orders: Detail[]
   invoices: Invoice[]
   deadLetters: DeadLetter[]
@@ -27,8 +28,9 @@ function sampleOrder(sequence: number, status = 'PERSISTED'): Detail {
 }
 
 export function createDemo(): Demo {
-  const orders = [sampleOrder(1), sampleOrder(2, 'MATCH_EXCEPTION')]
+  const orders = [sampleOrder(1), sampleOrder(2)]
   return {
+    reviewStep: 0,
     orders,
     invoices: [
       { id: 'demo-invoice-1', invoiceNumber: 'INV-2001', referencedPoNumber: 'PO-1001', status: 'PERSISTED', totalAmount: 1250, createdAt: timestamp },
@@ -41,6 +43,52 @@ export function createDemo(): Demo {
     ],
     audit: orders.map(order => ({ id: `audit-${order.id}`, entityType: 'ORDER', entityId: order.id, fromState: 'QUEUED', toState: order.status, reason: 'Seeded demonstration record', occurredAt: timestamp })),
   }
+}
+
+export function advanceReview(current: Demo): Demo {
+  const step = current.reviewStep + 1
+  if (step > 4) return current
+  const now = new Date().toISOString()
+  const orderId = 'review-order'
+  const poNumber = 'PO-REVIEW-01'
+
+  if (step === 1) {
+    const order: Detail = {
+      ...sampleOrder(1), id: orderId, poNumber, createdAt: now,
+      history: [
+        { toState: 'RECEIVED', reason: 'Review scenario: Cedar Retail sends an X12 850 to Northstar Supply', occurredAt: now },
+        { fromState: 'RECEIVED', toState: 'VALIDATING', reason: 'Check partner, line quantities, and calculated total', occurredAt: now },
+        { fromState: 'VALIDATING', toState: 'VALIDATED', reason: 'Sample order passes business rules', occurredAt: now },
+        { fromState: 'VALIDATED', toState: 'PERSISTED', reason: 'Purchase order stored for invoice comparison', occurredAt: now },
+      ],
+    }
+    const audit: AuditEvent[] = order.history.map((event, index) => ({ ...event, id: `review-order-${index}`, entityType: 'ORDER', entityId: orderId }))
+    return { ...current, reviewStep: step, orders: [order, ...current.orders], audit: [...audit, ...current.audit] }
+  }
+
+  if (step === 2 || step === 3) {
+    const mismatched = step === 2
+    const id = mismatched ? 'review-invoice-mismatch' : 'review-invoice-corrected'
+    const status = mismatched ? 'MATCH_EXCEPTION' : 'PERSISTED'
+    const invoice: Invoice = {
+      id, invoiceNumber: mismatched ? 'INV-REVIEW-01' : 'INV-REVIEW-02', referencedPoNumber: poNumber,
+      totalAmount: mismatched ? 1300 : 1250, status, createdAt: now,
+    }
+    const transitions = mismatched
+      ? [
+          { fromState: 'RECEIVED', toState: 'VALIDATING', reason: 'Compare supplier invoice with PO-REVIEW-01' },
+          { fromState: 'VALIDATING', toState: status, reason: 'Invoice total differs from purchase order total by 50.00.' },
+        ]
+      : [
+          { fromState: 'RECEIVED', toState: 'VALIDATING', reason: 'Supplier submits corrected invoice as a new document' },
+          { fromState: 'VALIDATING', toState: 'VALIDATED', reason: 'Invoice and purchase-order totals match.' },
+          { fromState: 'VALIDATED', toState: status, reason: 'Invoice persisted successfully.' },
+        ]
+    const audit: AuditEvent[] = transitions.map((event, index) => ({ ...event, id: `${id}-${index}`, entityType: 'INVOICE', entityId: id, occurredAt: now }))
+    return { ...current, reviewStep: step, invoices: [invoice, ...current.invoices], audit: [...audit, ...current.audit] }
+  }
+
+  return { ...current, reviewStep: step }
 }
 
 export function simulateDocument(current: Demo): Demo {
