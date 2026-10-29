@@ -8,7 +8,7 @@ export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   let gatewayProxy: ProxyOptions | undefined
 
-  if (command === 'serve' && mode !== 'e2e') {
+  if (command === 'serve' && mode !== 'e2e' && env.VITE_DASHBOARD_MODE === 'live') {
     const certificateDirectory = fileURLToPath(new URL('../.certs/', import.meta.url))
     const clientCertificate = `${certificateDirectory}dashboard-client.p12`
     const certificateAuthority = `${certificateDirectory}ca.crt`

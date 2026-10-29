@@ -1,0 +1,58 @@
+import AxeBuilder from '@axe-core/playwright'
+import { expect, test } from '@playwright/test'
+
+test('opens without credentials and explores sample orders without API requests', async ({ page }) => {
+  const backendRequests: string[] = []
+  page.on('request', request => {
+    if (/\/(api|oauth2)\//.test(new URL(request.url()).pathname)) backendRequests.push(request.url())
+  })
+  await page.goto('/')
+  await expect(page.getByText('DEMO WORKSPACE', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('Client ID')).toHaveCount(0)
+  await expect(page.getByRole('cell', { name: 'PO-1001', exact: true })).toBeVisible()
+  await page.getByRole('row').filter({ hasText: 'PO-1001' }).getByRole('button', { name: 'View' }).click()
+  await expect(page.getByRole('dialog', { name: 'Order detail' })).toContainText('WIDGET-A')
+  await page.getByRole('button', { name: '×', exact: true }).click()
+  await page.getByRole('button', { name: 'Run sample order' }).click()
+  await expect(page.getByRole('cell', { name: 'PO-1003', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'invoices', exact: true }).click()
+  await expect(page.getByRole('cell', { name: 'INV-2003', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'audit', exact: true }).click()
+  await page.getByLabel('Search audit log').fill('demo-order-3')
+  await expect(page.getByRole('cell', { name: 'ORDER demo-order-3', exact: false })).toBeVisible()
+  expect(backendRequests).toEqual([])
+})
+
+test('simulates recovery and partner approval with searchable audit events and a reset', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'dead letters', exact: true }).click()
+  await expect(page.getByTestId('dead-letter-table')).toContainText('OPEN')
+  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(page.getByTestId('dead-letter-table')).toContainText('RETRIED')
+  await expect(page.locator('.metricFoot')).toContainText('Open dead letters: 0')
+  await page.getByRole('button', { name: 'partners', exact: true }).click()
+  await page.getByRole('button', { name: 'Approve', exact: true }).click()
+  await expect(page.getByRole('row').filter({ hasText: 'HARBOR' })).toContainText('APPROVED')
+  await page.getByRole('button', { name: 'audit', exact: true }).click()
+  await page.getByLabel('Search audit log').fill('PARTNER')
+  await expect(page.getByRole('cell', { name: 'Partner approved in the demo workspace' })).toBeVisible()
+  await page.getByRole('button', { name: 'Reset demo' }).click()
+  await expect(page.locator('.metricFoot')).toContainText('Open dead letters: 1')
+  await page.getByRole('button', { name: 'partners', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('cell', { name: 'PO-1001', exact: true })).toBeVisible()
+})
+
+test('serves a branded SVG favicon and accessible mobile demo', async ({ page, request }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/favicon.svg')
+  const icon = await request.get('/favicon.svg')
+  expect(icon.ok()).toBeTruthy()
+  expect(icon.headers()['content-type']).toContain('image/svg+xml')
+  await expect(page.getByRole('button', { name: 'Run sample order' })).toBeVisible()
+  const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze()
+  expect(results.violations.filter(item => ['serious', 'critical'].includes(item.impact ?? ''))).toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+})

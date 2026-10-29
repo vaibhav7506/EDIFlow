@@ -24,7 +24,7 @@ async function mockBackend(page: Page, options: { orders?: boolean; deadLetters?
 }
 
 async function login(page: Page) {
-  await page.goto('/')
+  await page.goto('http://127.0.0.1:43174/')
   await page.getByLabel('Client ID').fill('admin-client')
   await page.getByLabel('Client secret').fill('secret')
   await page.getByRole('button', { name: 'Request access token' }).click()
@@ -51,7 +51,7 @@ test('retries a dead-letter record through the admin control', async ({ page }) 
 
 test('login, upload form, and orders table have no serious WCAG violations', async ({ page }) => {
   await mockBackend(page, { orders: true })
-  await page.goto('/')
+  await page.goto('http://127.0.0.1:43174/')
   let results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze()
   expect(results.violations.filter(v => ['serious', 'critical'].includes(v.impact ?? ''))).toEqual([])
   await page.getByLabel('Client ID').fill('admin-client')

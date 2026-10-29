@@ -7,9 +7,15 @@ export default defineConfig({
   reporter: process.env.CI ? 'github' : 'list',
   use: { baseURL: 'http://127.0.0.1:43173', trace: 'retain-on-failure' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
+  webServer: [{
     command: 'node ./node_modules/vite/bin/vite.js --mode e2e --host 127.0.0.1 --port 43173 --strictPort',
     url: 'http://127.0.0.1:43173',
-    reuseExistingServer: !process.env.CI
-  }
+    reuseExistingServer: false,
+    env: { VITE_DASHBOARD_MODE: 'demo' },
+  }, {
+    command: 'node ./node_modules/vite/bin/vite.js --mode e2e --host 127.0.0.1 --port 43174 --strictPort',
+    url: 'http://127.0.0.1:43174',
+    reuseExistingServer: false,
+    env: { VITE_DASHBOARD_MODE: 'live' },
+  }]
 })
